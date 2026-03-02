@@ -208,10 +208,6 @@ impl BranchComponent {
             let _ = write!(&mut result, "{}{}", icon, status.stash_count);
         }
 
-        if status.untracked_count > 0 {
-            let _ = write!(&mut result, " ?{}", status.untracked_count);
-        }
-
         if status.lines_added > 0 || status.lines_removed > 0 {
             let supports_colors = ctx.terminal.supports_colors();
             if supports_colors {
@@ -227,6 +223,19 @@ impl BranchComponent {
                     " +{} -{}",
                     status.lines_added, status.lines_removed
                 );
+            }
+        }
+
+        if status.untracked_count > 0 {
+            if ctx.terminal.supports_colors() {
+                // Yellow (Nord Aurora Yellow) for untracked files
+                let _ = write!(
+                    &mut result,
+                    " \x1b[38;2;235;203;139m?{}\x1b[0m",
+                    status.untracked_count
+                );
+            } else {
+                let _ = write!(&mut result, " ?{}", status.untracked_count);
             }
         }
 
@@ -775,7 +784,7 @@ mod tests {
     }
 
     #[test]
-    fn test_render_from_git_info_untracked_disabled_by_default() {
+    fn test_render_from_git_info_untracked_enabled_by_default() {
         let component = BranchComponent::new(BranchComponentConfig::default());
         let input = build_input(|_| {});
         let ctx = RenderContext {
@@ -800,8 +809,8 @@ mod tests {
 
         let output = component.render_from_git_info(&ctx, &info);
         assert!(output.visible);
-        // Untracked count should NOT appear when show_untracked_count is false (default)
-        assert!(!output.text.contains("[?]"));
+        // Untracked count should appear when show_untracked_count is true (default)
+        assert!(output.text.contains("?3"));
     }
 
     #[tokio::test]
@@ -832,5 +841,43 @@ mod tests {
         let output = component.render(&ctx).await;
         assert!(output.visible);
         assert!(output.text.contains('7'));
+    }
+
+    #[test]
+    fn test_format_branch_untracked_after_diff_stat() {
+        let component = BranchComponent::new(BranchComponentConfig::default());
+        let ctx = create_no_color_context();
+
+        let status = BranchStatus {
+            lines_added: 10,
+            lines_removed: 7,
+            untracked_count: 2,
+            ..Default::default()
+        };
+
+        let result = component.format_branch("main".to_string(), &status, &ctx);
+        assert_eq!(result, "main +10 -7 ?2");
+    }
+
+    #[test]
+    fn test_format_branch_with_untracked_colored() {
+        let component = BranchComponent::new(BranchComponentConfig::default());
+        let input = build_input(|_| {});
+
+        let ctx = RenderContext {
+            input: Arc::new(input),
+            config: Arc::new(Config::default()),
+            terminal: TerminalCapabilities::default(),
+        };
+
+        let status = BranchStatus {
+            untracked_count: 3,
+            ..Default::default()
+        };
+
+        let result = component.format_branch("main".to_string(), &status, &ctx);
+        assert!(result.contains("?3"));
+        // Should contain Nord Aurora Yellow ANSI code
+        assert!(result.contains("\x1b[38;2;235;203;139m"));
     }
 }

@@ -421,7 +421,7 @@ pub struct BranchStatusConfig {
     pub show_diff_stat: bool,
 
     /// Show untracked files count
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub show_untracked_count: bool,
 }
 
@@ -432,7 +432,7 @@ impl Default for BranchStatusConfig {
             show_ahead_behind: false,
             show_stash_count: false,
             show_diff_stat: true,
-            show_untracked_count: false,
+            show_untracked_count: true,
         }
     }
 }
