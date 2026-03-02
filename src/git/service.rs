@@ -4,7 +4,8 @@ use anyhow::{anyhow, Context, Result};
 use git2::{BranchType, DescribeOptions, Repository, Status, StatusOptions};
 
 use super::types::{
-    GitBranchInfo, GitInfo, GitOperationStatus, GitStashInfo, GitVersionInfo, GitWorkingStatus,
+    GitBranchInfo, GitDiffStat, GitInfo, GitOperationStatus, GitStashInfo, GitVersionInfo,
+    GitWorkingStatus,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -14,6 +15,7 @@ pub struct GitCollectionOptions {
     pub include_stash: bool,
     pub include_operation: bool,
     pub include_version: bool,
+    pub include_diff_stat: bool,
 }
 
 impl Default for GitCollectionOptions {
@@ -23,6 +25,7 @@ impl Default for GitCollectionOptions {
             include_stash: true,
             include_operation: true,
             include_version: true,
+            include_diff_stat: false,
         }
     }
 }
@@ -96,6 +99,11 @@ impl GitService {
         } else {
             GitVersionInfo::default()
         };
+        let diff_stat = if options.include_diff_stat {
+            self.diff_stat().unwrap_or_default()
+        } else {
+            GitDiffStat::default()
+        };
 
         GitInfo {
             is_repo: true,
@@ -104,6 +112,7 @@ impl GitService {
             stash,
             operation,
             version,
+            diff_stat,
         }
     }
 
@@ -232,6 +241,20 @@ impl GitService {
         status.bisecting = git_dir.join("BISECT_LOG").exists();
 
         status
+    }
+
+    fn diff_stat(&self) -> Result<GitDiffStat> {
+        let head = self.repo.head()?;
+        let head_tree = head.peel_to_tree()?;
+        let diff = self
+            .repo
+            .diff_tree_to_workdir_with_index(Some(&head_tree), None)?;
+        let stats = diff.stats()?;
+
+        Ok(GitDiffStat {
+            lines_added: stats.insertions(),
+            lines_removed: stats.deletions(),
+        })
     }
 
     fn version_info(&self) -> Result<GitVersionInfo> {

@@ -101,7 +101,8 @@ impl PowerlineThemeRenderer {
 
     fn should_preserve_internal_colors(component: &ComponentOutput) -> bool {
         let text = component.text.as_str();
-        text.contains('█')
+        text.contains('\x1b')
+            || text.contains('█')
             || text.contains('░')
             || text.contains('▓')
             || ["Ready", "Thinking", "Error", "Tool", "Complete"]

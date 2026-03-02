@@ -401,7 +401,8 @@ impl Default for BranchPerformanceConfig {
 }
 
 /// Branch status configuration
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct BranchStatusConfig {
     /// Show dirty workspace status
     #[serde(default)]
@@ -414,6 +415,21 @@ pub struct BranchStatusConfig {
     /// Show stash count
     #[serde(default)]
     pub show_stash_count: bool,
+
+    /// Show diff stat (lines added/removed vs HEAD)
+    #[serde(default = "default_true")]
+    pub show_diff_stat: bool,
+}
+
+impl Default for BranchStatusConfig {
+    fn default() -> Self {
+        Self {
+            show_dirty: false,
+            show_ahead_behind: false,
+            show_stash_count: false,
+            show_diff_stat: true,
+        }
+    }
 }
 
 /// Branch status icons

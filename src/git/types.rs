@@ -42,6 +42,12 @@ pub struct GitVersionInfo {
     pub tag: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct GitDiffStat {
+    pub lines_added: usize,
+    pub lines_removed: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GitInfo {
     pub is_repo: bool,
@@ -50,4 +56,5 @@ pub struct GitInfo {
     pub stash: GitStashInfo,
     pub operation: GitOperationStatus,
     pub version: GitVersionInfo,
+    pub diff_stat: GitDiffStat,
 }
