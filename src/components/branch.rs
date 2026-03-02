@@ -154,6 +154,10 @@ impl BranchComponent {
                 status.ahead = git.ahead.unwrap_or(0);
                 status.behind = git.behind.unwrap_or(0);
             }
+
+            if self.config.status.show_untracked_count {
+                status.untracked_count = git.untracked.unwrap_or(0);
+            }
         }
 
         Some((self.prepare_branch_name(branch_name), status))
@@ -202,6 +206,10 @@ impl BranchComponent {
                 &self.config.status_icons.stash_text,
             );
             let _ = write!(&mut result, "{}{}", icon, status.stash_count);
+        }
+
+        if status.untracked_count > 0 {
+            let _ = write!(&mut result, " ?{}", status.untracked_count);
         }
 
         if status.lines_added > 0 || status.lines_removed > 0 {
@@ -276,6 +284,7 @@ struct BranchStatus {
     ahead: i32,
     behind: i32,
     stash_count: i32,
+    untracked_count: i32,
     lines_added: usize,
     lines_removed: usize,
 }
@@ -368,6 +377,9 @@ impl BranchComponent {
         status.ahead = Self::usize_to_i32(info.branch.ahead);
         status.behind = Self::usize_to_i32(info.branch.behind);
         status.stash_count = Self::usize_to_i32(info.stash.count);
+        if self.config.status.show_untracked_count {
+            status.untracked_count = Self::usize_to_i32(info.status.untracked);
+        }
         status.lines_added = info.diff_stat.lines_added;
         status.lines_removed = info.diff_stat.lines_removed;
 
@@ -381,7 +393,9 @@ impl BranchComponent {
 
 impl BranchComponent {
     const fn status_required(&self) -> bool {
-        self.config.status.show_dirty || self.config.status.show_ahead_behind
+        self.config.status.show_dirty
+            || self.config.status.show_ahead_behind
+            || self.config.status.show_untracked_count
     }
 
     fn usize_to_i32(value: usize) -> i32 {
@@ -411,7 +425,7 @@ struct CachedGitEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::TerminalCapabilities;
+    use crate::components::{ColorSupport, TerminalCapabilities};
     use crate::core::{GitInfo, InputData};
     use std::sync::Arc;
 
@@ -583,8 +597,6 @@ mod tests {
     }
 
     fn create_no_color_context() -> RenderContext {
-        use crate::components::ColorSupport;
-
         let input = build_input(|_| {});
         let mut config = Config::default();
         config.style.enable_colors = crate::config::AutoDetect::Bool(false);
@@ -697,5 +709,128 @@ mod tests {
         assert!(output.visible);
         assert!(output.text.contains("+20"));
         assert!(output.text.contains("-5"));
+    }
+
+    #[test]
+    fn test_format_branch_with_untracked_no_color() {
+        let config = build_branch_config(|config| {
+            config.status.show_untracked_count = true;
+        });
+        let component = BranchComponent::new(config);
+        let ctx = create_no_color_context();
+
+        let status = BranchStatus {
+            untracked_count: 5,
+            ..Default::default()
+        };
+
+        let result = component.format_branch("main".to_string(), &status, &ctx);
+        assert_eq!(result, "main ?5");
+    }
+
+    #[test]
+    fn test_format_branch_with_untracked_zero_hidden() {
+        let config = build_branch_config(|config| {
+            config.status.show_untracked_count = true;
+        });
+        let component = BranchComponent::new(config);
+        let ctx = create_no_color_context();
+
+        let status = BranchStatus::default();
+
+        let result = component.format_branch("main".to_string(), &status, &ctx);
+        assert_eq!(result, "main");
+    }
+
+    #[test]
+    fn test_render_from_git_info_with_untracked() {
+        let config = build_branch_config(|config| {
+            config.status.show_untracked_count = true;
+        });
+        let component = BranchComponent::new(config);
+        let input = build_input(|_| {});
+        let ctx = RenderContext {
+            input: Arc::new(input),
+            config: Arc::new(Config::default()),
+            terminal: TerminalCapabilities::default(),
+        };
+
+        let info = crate::git::GitInfo {
+            is_repo: true,
+            branch: crate::git::GitBranchInfo {
+                current: "main".to_string(),
+                ..Default::default()
+            },
+            status: crate::git::GitWorkingStatus {
+                clean: false,
+                untracked: 3,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let output = component.render_from_git_info(&ctx, &info);
+        assert!(output.visible);
+        assert!(output.text.contains('3'));
+    }
+
+    #[test]
+    fn test_render_from_git_info_untracked_disabled_by_default() {
+        let component = BranchComponent::new(BranchComponentConfig::default());
+        let input = build_input(|_| {});
+        let ctx = RenderContext {
+            input: Arc::new(input),
+            config: Arc::new(Config::default()),
+            terminal: TerminalCapabilities::default(),
+        };
+
+        let info = crate::git::GitInfo {
+            is_repo: true,
+            branch: crate::git::GitBranchInfo {
+                current: "main".to_string(),
+                ..Default::default()
+            },
+            status: crate::git::GitWorkingStatus {
+                clean: false,
+                untracked: 3,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let output = component.render_from_git_info(&ctx, &info);
+        assert!(output.visible);
+        // Untracked count should NOT appear when show_untracked_count is false (default)
+        assert!(!output.text.contains("[?]"));
+    }
+
+    #[tokio::test]
+    async fn test_branch_with_untracked_from_stdin() {
+        let config = build_branch_config(|config| {
+            config.status.show_untracked_count = true;
+        });
+
+        let input = build_input(|input| {
+            input.git = Some(GitInfo {
+                branch: Some("feature".to_string()),
+                status: None,
+                ahead: None,
+                behind: None,
+                staged: None,
+                unstaged: None,
+                untracked: Some(7),
+            });
+        });
+
+        let component = BranchComponent::new(config);
+        let ctx = RenderContext {
+            input: Arc::new(input),
+            config: Arc::new(Config::default()),
+            terminal: TerminalCapabilities::default(),
+        };
+
+        let output = component.render(&ctx).await;
+        assert!(output.visible);
+        assert!(output.text.contains('7'));
     }
 }
