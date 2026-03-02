@@ -34,3 +34,13 @@ Thumbs.db
 # npm packages (generated during build/publish)
 npm/**/*.tgz
 *.tgz
+
+# Local configuration files
+*.local
+*.local.*
+.env.local
+.env.*.local
+local.*/
+
+# Claude Code local settings
+.claude/settings.local.json
