@@ -55,6 +55,7 @@ impl BranchComponent {
         let status_config = self.config.status.clone();
         let include_status = self.status_required();
         let include_stash = status_config.show_stash_count;
+        let include_diff_stat = status_config.show_diff_stat;
 
         if performance.enable_cache {
             if let Some(info) = self.cached_git_info(repo_path.as_path()) {
@@ -74,6 +75,7 @@ impl BranchComponent {
                 include_stash,
                 include_operation: false,
                 include_version: false,
+                include_diff_stat,
             };
 
             if performance.skip_on_large_repo {
@@ -81,6 +83,7 @@ impl BranchComponent {
                 if entry_count > performance.large_repo_threshold {
                     options.include_status = false;
                     options.include_stash = false;
+                    options.include_diff_stat = false;
                 }
             }
 
@@ -201,6 +204,24 @@ impl BranchComponent {
             let _ = write!(&mut result, "{}{}", icon, status.stash_count);
         }
 
+        if status.lines_added > 0 || status.lines_removed > 0 {
+            let supports_colors = ctx.terminal.supports_colors();
+            if supports_colors {
+                // Green for additions, red for deletions
+                let _ = write!(
+                    &mut result,
+                    " \x1b[38;2;163;190;140m+{}\x1b[0m \x1b[38;2;191;97;106m-{}\x1b[0m",
+                    status.lines_added, status.lines_removed
+                );
+            } else {
+                let _ = write!(
+                    &mut result,
+                    " +{} -{}",
+                    status.lines_added, status.lines_removed
+                );
+            }
+        }
+
         result
     }
 
@@ -255,6 +276,8 @@ struct BranchStatus {
     ahead: i32,
     behind: i32,
     stash_count: i32,
+    lines_added: usize,
+    lines_removed: usize,
 }
 
 #[async_trait]
@@ -345,6 +368,8 @@ impl BranchComponent {
         status.ahead = Self::usize_to_i32(info.branch.ahead);
         status.behind = Self::usize_to_i32(info.branch.behind);
         status.stash_count = Self::usize_to_i32(info.stash.count);
+        status.lines_added = info.diff_stat.lines_added;
+        status.lines_removed = info.diff_stat.lines_removed;
 
         let branch_name = self.prepare_branch_name(&info.branch.current);
         let text = self.format_branch(branch_name, &status, ctx);
@@ -555,5 +580,122 @@ mod tests {
         let output = component.render(&ctx).await;
         assert!(output.visible);
         assert!(output.text.starts_with("lazy-main"));
+    }
+
+    fn create_no_color_context() -> RenderContext {
+        use crate::components::ColorSupport;
+
+        let input = build_input(|_| {});
+        let mut config = Config::default();
+        config.style.enable_colors = crate::config::AutoDetect::Bool(false);
+
+        RenderContext {
+            input: Arc::new(input),
+            config: Arc::new(config),
+            terminal: TerminalCapabilities {
+                color_support: ColorSupport::None,
+                ..Default::default()
+            },
+        }
+    }
+
+    #[test]
+    fn test_format_branch_with_diff_stat_no_color() {
+        let component = BranchComponent::new(BranchComponentConfig::default());
+        let ctx = create_no_color_context();
+
+        let status = BranchStatus {
+            lines_added: 42,
+            lines_removed: 7,
+            ..Default::default()
+        };
+
+        let result = component.format_branch("main".to_string(), &status, &ctx);
+        assert_eq!(result, "main +42 -7");
+    }
+
+    #[test]
+    fn test_format_branch_with_diff_stat_zero_changes() {
+        let component = BranchComponent::new(BranchComponentConfig::default());
+        let ctx = create_no_color_context();
+
+        let status = BranchStatus::default();
+
+        let result = component.format_branch("main".to_string(), &status, &ctx);
+        assert_eq!(result, "main");
+    }
+
+    #[test]
+    fn test_format_branch_with_diff_stat_only_additions() {
+        let component = BranchComponent::new(BranchComponentConfig::default());
+        let ctx = create_no_color_context();
+
+        let status = BranchStatus {
+            lines_added: 10,
+            lines_removed: 0,
+            ..Default::default()
+        };
+
+        let result = component.format_branch("main".to_string(), &status, &ctx);
+        assert_eq!(result, "main +10 -0");
+    }
+
+    #[test]
+    fn test_format_branch_with_diff_stat_colored() {
+        let component = BranchComponent::new(BranchComponentConfig::default());
+        let input = build_input(|_| {});
+
+        let ctx = RenderContext {
+            input: Arc::new(input),
+            config: Arc::new(Config::default()),
+            terminal: TerminalCapabilities::default(),
+        };
+
+        let status = BranchStatus {
+            lines_added: 5,
+            lines_removed: 3,
+            ..Default::default()
+        };
+
+        let result = component.format_branch("main".to_string(), &status, &ctx);
+        assert!(result.starts_with("main"));
+        assert!(result.contains("+5"));
+        assert!(result.contains("-3"));
+        // Should contain ANSI color codes
+        assert!(result.contains("\x1b[38;2;163;190;140m")); // green
+        assert!(result.contains("\x1b[38;2;191;97;106m")); // red
+    }
+
+    #[test]
+    fn test_render_from_git_info_with_diff_stat() {
+        let component = BranchComponent::new(BranchComponentConfig::default());
+        let input = build_input(|_| {});
+        let ctx = RenderContext {
+            input: Arc::new(input),
+            config: Arc::new(Config::default()),
+            terminal: TerminalCapabilities::default(),
+        };
+
+        let info = crate::git::GitInfo {
+            is_repo: true,
+            branch: crate::git::GitBranchInfo {
+                current: "feature".to_string(),
+                ..Default::default()
+            },
+            status: crate::git::GitWorkingStatus {
+                clean: true,
+                ..Default::default()
+            },
+            diff_stat: crate::git::GitDiffStat {
+                lines_added: 20,
+                lines_removed: 5,
+            },
+            ..Default::default()
+        };
+
+        let output = component.render_from_git_info(&ctx, &info);
+        assert!(output.visible);
+        assert!(output.text.contains("+20"));
+        assert!(output.text.contains("-5"));
     }
 }
