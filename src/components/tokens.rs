@@ -10,6 +10,7 @@ use super::base::{Component, ComponentFactory, ComponentOutput, RenderContext};
 use crate::config::{BaseComponentConfig, Config, TokensComponentConfig};
 use crate::storage;
 use crate::utils::model_parser::parse_model_id;
+use crate::utils::pct_to_vertical_block;
 
 #[derive(Clone, Debug)]
 struct TokenUsageInfo {
@@ -249,6 +250,26 @@ impl TokensComponent {
             format!("({used_k:.1}k/{total_k:.0}k)")
         }
     }
+
+    fn render_compact(&self, ctx: &RenderContext, percentage: f64) -> ComponentOutput {
+        let supports_colors = ctx.terminal.supports_colors();
+        let block = pct_to_vertical_block(percentage);
+
+        let text = if supports_colors {
+            let (r, g, b) = rainbow_gradient_color(percentage);
+            format!("\x1b[38;2;{r};{g};{b}m{block}\x1b[0m {percentage:.0}%")
+        } else {
+            format!("{block} {percentage:.0}%")
+        };
+
+        let color = self.select_color(percentage);
+        let icon = self.select_icon(ctx);
+
+        ComponentOutput::new(text)
+            .with_icon(icon.unwrap_or_default())
+            .with_icon_color(color.clone())
+            .with_text_color(color)
+    }
 }
 
 #[async_trait]
@@ -273,6 +294,10 @@ impl Component for TokensComponent {
         let total = usage.total.max(1);
         let percentage = (to_f64(usage.used) / to_f64(total)) * 100.0;
         let clamped_percentage = percentage.clamp(0.0, 999.9);
+
+        if self.config.compact_bar {
+            return self.render_compact(ctx, clamped_percentage);
+        }
 
         let mut parts = Vec::new();
 

@@ -7,6 +7,16 @@ pub mod model_parser;
 use std::env;
 use std::path::PathBuf;
 
+pub const VERTICAL_BLOCKS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
+#[must_use]
+pub fn pct_to_vertical_block(pct: f64) -> char {
+    let clamped = pct.clamp(0.0, 100.0);
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let idx = ((clamped / 100.0) * 7.0).round() as usize;
+    VERTICAL_BLOCKS[idx.min(7)]
+}
+
 /// 获取用户主目录，优先尊重 `HOME` 环境变量。
 ///
 /// 在 Windows Runner 上，GitHub Actions 会为子进程注入 `HOME`，但

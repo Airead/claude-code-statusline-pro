@@ -532,6 +532,9 @@ pub struct TokensComponentConfig {
     pub show_gradient: bool,
 
     #[serde(default)]
+    pub compact_bar: bool,
+
+    #[serde(default)]
     pub progress_bar_chars: TokensProgressBarCharsConfig,
 
     #[serde(default)]
@@ -565,6 +568,7 @@ impl Default for TokensComponentConfig {
             show_raw_numbers: false,
             progress_width: default_progress_width(),
             show_gradient: false,
+            compact_bar: false,
             progress_bar_chars: TokensProgressBarCharsConfig::default(),
             colors: TokensColorConfig::default(),
             thresholds: TokensThresholdsConfig::default(),
@@ -695,6 +699,10 @@ pub struct QuotaComponentConfig {
     /// Cache TTL in seconds
     #[serde(default = "default_quota_cache_ttl")]
     pub cache_ttl: u64,
+
+    /// Use compact vertical bar display (usage vs time progress)
+    #[serde(default)]
+    pub compact_bar: bool,
 }
 
 impl Default for QuotaComponentConfig {
@@ -705,7 +713,7 @@ impl Default for QuotaComponentConfig {
                 icon_color: "cyan".to_string(),
                 text_color: "white".to_string(),
                 emoji_icon: "📊".to_string(),
-                nerd_icon: "\u{f201}".to_string(),
+                nerd_icon: "\u{f12a2}".to_string(),
                 text_icon: "[Q]".to_string(),
             },
             show_five_hour: true,
@@ -714,6 +722,7 @@ impl Default for QuotaComponentConfig {
             show_percentage: true,
             progress_width: default_quota_progress_width(),
             cache_ttl: default_quota_cache_ttl(),
+            compact_bar: false,
         }
     }
 }

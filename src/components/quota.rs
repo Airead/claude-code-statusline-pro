@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use super::base::{Component, ComponentFactory, ComponentOutput, RenderContext};
 use crate::config::{BaseComponentConfig, Config, QuotaComponentConfig};
 use crate::themes::ansi_fg;
+use crate::utils::pct_to_vertical_block;
 
 const OAUTH_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const KEYCHAIN_SERVICE: &str = "Claude Code-credentials";
@@ -254,6 +255,46 @@ fn select_color(pct: f64) -> &'static str {
     }
 }
 
+fn ratio_color(ratio: f64) -> (u8, u8, u8) {
+    let r = ratio.clamp(0.0, 2.0);
+
+    let green = (80.0, 200.0, 80.0);
+    let yellow_green = (150.0, 200.0, 60.0);
+    let yellow = (200.0, 200.0, 80.0);
+    let orange = (220.0, 160.0, 60.0);
+    let red = (200.0, 80.0, 80.0);
+
+    let lerp = |a: (f64, f64, f64), b: (f64, f64, f64), t: f64| {
+        let t = t.clamp(0.0, 1.0);
+        (
+            (b.0 - a.0).mul_add(t, a.0),
+            (b.1 - a.1).mul_add(t, a.1),
+            (b.2 - a.2).mul_add(t, a.2),
+        )
+    };
+
+    let (cr, cg, cb) = if r <= 0.6 {
+        lerp(green, yellow_green, r / 0.6)
+    } else if r <= 0.8 {
+        lerp(yellow_green, yellow, (r - 0.6) / 0.2)
+    } else if r <= 1.0 {
+        lerp(yellow, orange, (r - 0.8) / 0.2)
+    } else if r <= 1.2 {
+        lerp(orange, red, (r - 1.0) / 0.2)
+    } else {
+        red
+    };
+
+    let convert = |v: f64| -> u8 {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        {
+            v.clamp(0.0, 255.0).round() as u8
+        }
+    };
+
+    (convert(cr), convert(cg), convert(cb))
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -283,6 +324,12 @@ impl QuotaComponent {
 
     fn render_window(&self, label: &str, window: &RateWindow, supports_colors: bool) -> String {
         let pct = window.utilization.clamp(0.0, 100.0);
+        let elapsed = elapsed_pct(label, window.resets_at.as_deref());
+
+        if self.config.compact_bar {
+            return Self::render_compact_bar(label, pct, elapsed, supports_colors);
+        }
+
         let color_name = select_color(pct);
 
         let mut text = String::new();
@@ -302,7 +349,6 @@ impl QuotaComponent {
         }
 
         if self.config.show_percentage {
-            let elapsed = elapsed_pct(label, window.resets_at.as_deref());
             if let Some(ep) = elapsed {
                 let cmp = if pct > ep + 1.0 {
                     ">"
@@ -319,6 +365,48 @@ impl QuotaComponent {
 
         if supports_colors {
             text.push_str("\x1b[0m");
+        }
+
+        text
+    }
+
+    fn render_compact_bar(
+        _label: &str,
+        usage_pct: f64,
+        elapsed: Option<f64>,
+        supports_colors: bool,
+    ) -> String {
+        let mut text = String::new();
+
+        let usage_block = pct_to_vertical_block(usage_pct);
+
+        if let Some(elapsed_pct_val) = elapsed {
+            let elapsed_block = pct_to_vertical_block(elapsed_pct_val);
+            let ratio = if elapsed_pct_val > 0.0 {
+                usage_pct / elapsed_pct_val
+            } else {
+                0.0
+            };
+
+            if supports_colors {
+                let (r, g, b) = ratio_color(ratio);
+                let _ = write!(text, "\x1b[38;2;{r};{g};{b}m{usage_block}");
+                text.push_str("\x1b[38;2;120;120;120m");
+                text.push(elapsed_block);
+                text.push_str("\x1b[0m");
+            } else {
+                text.push(usage_block);
+                text.push(elapsed_block);
+            }
+        } else if supports_colors {
+            let (r, g, b) = ratio_color(usage_pct / 100.0);
+            let _ = write!(
+                text,
+                "\x1b[38;2;{r};{g};{b}m{usage_block}\x1b[38;2;120;120;120m \x1b[0m"
+            );
+        } else {
+            text.push(usage_block);
+            text.push(' ');
         }
 
         text
