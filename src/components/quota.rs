@@ -390,23 +390,18 @@ impl QuotaComponent {
 
             if supports_colors {
                 let (r, g, b) = ratio_color(ratio);
-                let _ = write!(text, "\x1b[38;2;{r};{g};{b}m{usage_block}");
-                text.push_str("\x1b[38;2;120;120;120m");
-                text.push(elapsed_block);
-                text.push_str("\x1b[0m");
+                let _ = write!(text, "\x1b[38;2;{r};{g};{b}m{usage_block}\x1b[38;2;120;120;120m{elapsed_block} {usage_pct:.0}%\x1b[0m");
             } else {
-                text.push(usage_block);
-                text.push(elapsed_block);
+                let _ = write!(text, "{usage_block}{elapsed_block} {usage_pct:.0}%");
             }
         } else if supports_colors {
             let (r, g, b) = ratio_color(usage_pct / 100.0);
             let _ = write!(
                 text,
-                "\x1b[38;2;{r};{g};{b}m{usage_block}\x1b[38;2;120;120;120m \x1b[0m"
+                "\x1b[38;2;{r};{g};{b}m{usage_block}\x1b[38;2;120;120;120m {usage_pct:.0}%\x1b[0m"
             );
         } else {
-            text.push(usage_block);
-            text.push(' ');
+            let _ = write!(text, "{usage_block} {usage_pct:.0}%");
         }
 
         text
